@@ -172,13 +172,13 @@
         return Math.abs(a.z) < EPSZ && Math.abs(b.z) < EPSZ;
       }
 
-      function drawArrow(start, end, color, dashed = false) {
+      function drawArrow(start, end, color, dashed = false, headLength = 0.35) {
         const thick = isZPlane(start, end);
         const dirVec = end.clone().sub(start);
         const len = dirVec.length();
         if (len <= 0.1) return;
         dirVec.normalize();
-        const headLen = 0.35;
+        const headLen = headLength;
         const shaftLen = Math.max(0.05, len - headLen);
         const r = thick ? 0.04 : 0.015;
         const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0), dirVec);
@@ -186,11 +186,12 @@
         // Create shaft (solid or dashed)
         let shaft;
         if (dashed) {
-          // Create a dashed line using LineDashedMaterial
+          // Create a dashed line using LineDashedMaterial, but make it a bit shorter to fit the arrowhead
           const points = [];
           const segments = Math.max(3, Math.floor(len * 5));
+          const dashEnd = 1 - (headLen / len); // Stop the dashed line before the head starts
           for (let i = 0; i <= segments; i++) {
-            const t = i / segments;
+            const t = (i / segments) * dashEnd;
             points.push(start.clone().lerp(end, t));
           }
           const geometry = new THREE.BufferGeometry().setFromPoints(points);
@@ -215,18 +216,16 @@
         }
         scene.add(shaft);
 
-        // Add arrow head if not dashed
-        if (!dashed) {
-          const coneRad = thick ? r*2.2 : r*1.8;
-          const head = new THREE.Mesh(
-            new THREE.ConeGeometry(coneRad, headLen, 16), 
-            new THREE.MeshStandardMaterial({ color, metalness: 0.1, roughness: 0.6 })
-          );
-          const headCenter = start.clone().add(dirVec.clone().multiplyScalar(shaftLen + headLen/2));
-          head.position.copy(headCenter);
-          head.quaternion.copy(quat);
-          scene.add(head);
-        }
+        // Always add arrow head, but make it smaller for dashed lines
+        const coneRad = thick ? r*(dashed ? 1.6 : 2.2) : r*(dashed ? 0.8 : 1.8);
+        const head = new THREE.Mesh(
+          new THREE.ConeGeometry(coneRad, headLen, 16), 
+          new THREE.MeshStandardMaterial({ color, metalness: 0.1, roughness: 0.6 })
+        );
+        const headCenter = start.clone().add(dirVec.clone().multiplyScalar(shaftLen + headLen/2));
+        head.position.copy(headCenter);
+        head.quaternion.copy(quat);
+        scene.add(head);
       }
 
       function makeNode(text, position, color){
@@ -272,7 +271,7 @@
         let a = srcPos.clone();
         let b = dstPos.clone();
         if(isZPlane(a,b)){ a.z += 0.01; b.z += 0.01; }
-        drawArrow(a, b, 0x79c0ff, true);  // true for dashed line
+        drawArrow(a, b, 0x79c0ff, true, 0.25);  // true for dashed line, with smaller arrowhead
       });
 
       function onWindowResize(){
