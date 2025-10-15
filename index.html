@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>3D 坐标系 演示（Three.js）</title>
+  <style>
+    html,body{height:100%;margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial}
+    #app{height:100vh;display:flex;flex-direction:column}
+    header{padding:10px 16px;background:#0b1220;color:#fff;display:flex;align-items:center;gap:12px}
+    header h1{font-size:16px;margin:0}
+    #container{flex:1;position:relative;background:#111}
+    .legend{position:absolute;left:12px;top:12px;color:#fff;padding:8px 10px;background:rgba(0,0,0,0.4);border-radius:6px;font-size:13px}
+    .footer{padding:8px 12px;background:#07101a;color:#9ec8ff;font-size:13px}
+    canvas{display:block}
+  </style>
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>3D 坐标系（Three.js）</h1>
+      <div style="opacity:0.85">鼠标拖拽旋转，滚轮缩放，右键平移</div>
+    </header>
+
+    <div id="container">
+      <div class="legend">坐标系: X=红, Y=绿, Z=蓝（含正负方向）</div>
+    </div>
+
+    <div class="footer">生成：单文件 HTML（使用 Three.js）</div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'https://esm.sh/three@0.152.2';
+    import { OrbitControls } from 'https://esm.sh/three@0.152.2/examples/jsm/controls/OrbitControls.js';
+
+    window.addEventListener('DOMContentLoaded', () => {
+      const container = document.getElementById('container');
+      const renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setPixelRatio(window.devicePixelRatio || 1);
+      renderer.setSize(container.clientWidth, container.clientHeight);
+      renderer.outputEncoding = THREE.sRGBEncoding;
+      container.appendChild(renderer.domElement);
+
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x0b1220);
+
+      const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
+      camera.position.set(6, 6, 6);
+
+      const controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.08;
+      controls.target.set(0,0,0);
+
+      const grid = new THREE.GridHelper(10, 20, 0x444444, 0x222222);
+      grid.rotation.x = Math.PI / 2;
+      scene.add(grid);
+
+      const centerGeom = new THREE.SphereGeometry(0.06, 16, 12);
+      const centerMat = new THREE.MeshStandardMaterial({ color: 0xffdd55, metalness:0.2, roughness:0.6 });
+      const centerMesh = new THREE.Mesh(centerGeom, centerMat);
+      scene.add(centerMesh);
+
+      const amb = new THREE.AmbientLight(0xffffff, 0.45);
+      scene.add(amb);
+      const dir = new THREE.DirectionalLight(0xffffff, 0.7);
+      dir.position.set(5,10,7);
+      scene.add(dir);
+
+      function makeLabelSprite(text) {
+        const size = 256;
+        const canvas = document.createElement('canvas');
+        canvas.width = size; canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0,0,size,size);
+        ctx.font = 'bold 64px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = 'white';
+        ctx.lineWidth = 6;
+        ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+        ctx.strokeText(text, size/2, size/2);
+        ctx.fillText(text, size/2, size/2);
+        const tex = new THREE.CanvasTexture(canvas);
+        const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false, depthWrite: false });
+        const sprite = new THREE.Sprite(mat);
+        sprite.scale.set(0.9,0.5,1.0);
+        return sprite;
+      }
+
+      // 帮助线箭头：同时绘制正负方向
+      function makeArrow(dirVec, color, labelText){
+        const group = new THREE.Group();
+        const length = 5;
+        const lineGeom = new THREE.BufferGeometry().setFromPoints([
+          dirVec.clone().multiplyScalar(-length),
+          dirVec.clone().multiplyScalar(length)
+        ]);
+        const lineMat = new THREE.LineBasicMaterial({ color });
+        const line = new THREE.Line(lineGeom, lineMat);
+        group.add(line);
+
+        // 正向箭头
+        const coneGeom = new THREE.ConeGeometry(0.12, 0.4, 12);
+        const coneMat = new THREE.MeshStandardMaterial({ color });
+        const conePos = new THREE.Mesh(coneGeom, coneMat);
+        conePos.position.copy(dirVec.clone().multiplyScalar(length + 0.2));
+        conePos.lookAt(new THREE.Vector3(0,0,0));
+        conePos.rotateX(Math.PI);
+        group.add(conePos);
+
+        // 负向箭头
+        const coneNeg = new THREE.Mesh(coneGeom, coneMat);
+        coneNeg.position.copy(dirVec.clone().multiplyScalar(-length - 0.2));
+        coneNeg.lookAt(new THREE.Vector3(0,0,0));
+        group.add(coneNeg);
+
+        // 标签
+        const label = makeLabelSprite(labelText);
+        label.position.copy(dirVec.clone().multiplyScalar(length + 0.8));
+        group.add(label);
+
+        return group;
+      }
+
+      scene.add(makeArrow(new THREE.Vector3(1,0,0), 0xff0000, 'X'));
+      scene.add(makeArrow(new THREE.Vector3(0,1,0), 0x00ff00, 'Y'));
+      scene.add(makeArrow(new THREE.Vector3(0,0,1), 0x0000ff, 'Z'));
+
+      function onWindowResize(){
+        const w = container.clientWidth;
+        const h = container.clientHeight;
+        renderer.setSize(w,h);
+        camera.aspect = w/h;
+        camera.updateProjectionMatrix();
+      }
+      window.addEventListener('resize', onWindowResize, false);
+
+      function animate(){
+        requestAnimationFrame(animate);
+        controls.update();
+        renderer.render(scene, camera);
+      }
+      animate();
+
+      container.addEventListener('dblclick', () => {
+        camera.position.set(6,6,6);
+        controls.target.set(0,0,0);
+        controls.update();
+      });
+    });
+  </script>
+</body>
+</html>
