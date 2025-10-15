@@ -13,6 +13,10 @@
     .legend{position:absolute;left:12px;top:12px;color:#fff;padding:8px 10px;background:rgba(0,0,0,0.4);border-radius:6px;font-size:13px}
     .footer{padding:8px 12px;background:#07101a;color:#9ec8ff;font-size:13px}
     canvas{display:block}
+    .controls{display:flex;align-items:center;gap:6px;margin-left:auto}
+    .controls button{appearance:none;border:1px solid #2a3b5f;background:#12213a;color:#e6f0ff;border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer}
+    .controls button:hover{background:#183056}
+    .controls .sep{width:1px;height:18px;background:#2a3b5f;margin:0 4px}
   </style>
 </head>
 <body>
@@ -20,6 +24,17 @@
     <header>
       <h1>3D 坐标系（Three.js）</h1>
       <div style="opacity:0.85">鼠标拖拽旋转，滚轮缩放，右键平移</div>
+      <div class="controls">
+        <button id="btn-up" title="上（↑ / W）">↑</button>
+        <button id="btn-down" title="下（↓ / S）">↓</button>
+        <button id="btn-left" title="左（← / A）">←</button>
+        <button id="btn-right" title="右（→ / D）">→</button>
+        <span class="sep"></span>
+        <button id="btn-zoom-in" title="拉近（+ 或 =）">＋</button>
+        <button id="btn-zoom-out" title="拉远（-）">－</button>
+        <span class="sep"></span>
+        <button id="btn-reset" title="重置（R 或 双击画布）">重置</button>
+      </div>
     </header>
 
     <div id="container">
@@ -32,6 +47,7 @@
   <script type="module">
     import * as THREE from 'https://esm.sh/three@0.152.2';
     import { OrbitControls } from 'https://esm.sh/three@0.152.2/examples/jsm/controls/OrbitControls.js';
+    import { RoundedBoxGeometry } from 'https://esm.sh/three@0.152.2/examples/jsm/geometries/RoundedBoxGeometry.js';
 
     window.addEventListener('DOMContentLoaded', () => {
       const container = document.getElementById('container');
@@ -73,7 +89,7 @@
         canvas.width = size; canvas.height = size;
         const ctx = canvas.getContext('2d');
         ctx.clearRect(0,0,size,size);
-        ctx.font = 'bold 64px sans-serif';
+        ctx.font = 'bold 32px sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillStyle = 'white';
@@ -127,6 +143,66 @@
       scene.add(makeArrow(new THREE.Vector3(0,1,0), 0x00ff00, 'Y'));
       scene.add(makeArrow(new THREE.Vector3(0,0,1), 0x0000ff, 'Z'));
 
+      const tickSize = 0.15;
+      const tickStep = 1;
+      const lengthAxis = 5;
+
+      const ptsX = [];
+      for(let i=-lengthAxis;i<=lengthAxis;i+=tickStep){ if(i===0) continue; ptsX.push(new THREE.Vector3(i,-tickSize,0), new THREE.Vector3(i,tickSize,0)); }
+      const geoX = new THREE.BufferGeometry().setFromPoints(ptsX);
+      const ticksX = new THREE.LineSegments(geoX, new THREE.LineBasicMaterial({ color: 0xff5555 }));
+      scene.add(ticksX);
+
+      const ptsY = [];
+      for(let i=-lengthAxis;i<=lengthAxis;i+=tickStep){ if(i===0) continue; ptsY.push(new THREE.Vector3(-tickSize,i,0), new THREE.Vector3(tickSize,i,0)); }
+      const geoY = new THREE.BufferGeometry().setFromPoints(ptsY);
+      const ticksY = new THREE.LineSegments(geoY, new THREE.LineBasicMaterial({ color: 0x55ff55 }));
+      scene.add(ticksY);
+
+      const ptsZ = [];
+      for(let i=-lengthAxis;i<=lengthAxis;i+=tickStep){ if(i===0) continue; ptsZ.push(new THREE.Vector3(-tickSize,0,i), new THREE.Vector3(tickSize,0,i)); }
+      const geoZ = new THREE.BufferGeometry().setFromPoints(ptsZ);
+      const ticksZ = new THREE.LineSegments(geoZ, new THREE.LineBasicMaterial({ color: 0x5555ff }));
+      scene.add(ticksZ);
+
+      function makeNode(text, position, color){
+        const w = 0.8, h = 0.4, d = 0.09, r = 0.09;
+        const box = new THREE.Mesh(new RoundedBoxGeometry(w, h, d, 4, r), new THREE.MeshStandardMaterial({ color, metalness:0.2, roughness:0.5 }));
+        box.position.copy(position.clone().setZ(0));
+        const label = makeLabelSprite(text);
+        label.position.copy(position.clone().setZ(d*0.5+0.02));
+        const group = new THREE.Group();
+        group.add(box);
+        group.add(label);
+        return group;
+      }
+
+      const nodes = [
+        { id:'api', text:'Gateway', pos:new THREE.Vector3(0,2.6,0), color:0x00c2ff },
+        { id:'iam', text:'IAM', pos:new THREE.Vector3(-3,0,0), color:0x9b59b6 },
+        { id:'shopping', text:'shopping', pos:new THREE.Vector3(-1,0,0), color:0x2ecc71 },
+        { id:'cart', text:'cart', pos:new THREE.Vector3(1,0,0), color:0xf1c40f },
+        { id:'pay', text:'pay', pos:new THREE.Vector3(3,0,0), color:0xe74c3c }
+      ];
+
+      const nodeMap = new Map();
+      nodes.forEach(n=>{
+        const g = makeNode(n.text, n.pos, n.color);
+        scene.add(g);
+        nodeMap.set(n.id, { ...n, group:g });
+      });
+
+      const origin = nodeMap.get('api').pos.clone();
+      const headLen = 0.35;
+      const headWid = 0.22;
+      ['iam','shopping','cart','pay'].forEach(key=>{
+        const dst = nodeMap.get(key).pos.clone();
+        const dir = dst.clone().sub(origin).normalize();
+        const dist = origin.distanceTo(dst) - 0.5;
+        const arr = new THREE.ArrowHelper(dir, origin.clone().setZ(0.01), dist, 0x79c0ff, headLen, headWid);
+        scene.add(arr);
+      });
+
       function onWindowResize(){
         const w = container.clientWidth;
         const h = container.clientHeight;
@@ -142,6 +218,54 @@
         renderer.render(scene, camera);
       }
       animate();
+      const ROT_STEP = THREE.MathUtils.degToRad(10);
+      const ZOOM_FACTOR = 0.85;
+      const EPS = 1e-4;
+
+      function applySpherical(deltaTheta = 0, deltaPhi = 0, radiusScale = 1){
+        const target = controls.target.clone();
+        const offset = camera.position.clone().sub(target);
+        const sph = new THREE.Spherical().setFromVector3(offset);
+        sph.theta += deltaTheta;
+        sph.phi += deltaPhi;
+        sph.phi = Math.max(EPS, Math.min(Math.PI - EPS, sph.phi));
+        sph.radius = Math.max(0.1, sph.radius * radiusScale);
+        camera.position.copy(new THREE.Vector3().setFromSpherical(sph).add(target));
+        camera.lookAt(target);
+        controls.update();
+      }
+
+      const $ = (id)=>document.getElementById(id);
+      $("btn-up").addEventListener('click', ()=>applySpherical(0, -ROT_STEP, 1));
+      $("btn-down").addEventListener('click', ()=>applySpherical(0, ROT_STEP, 1));
+      $("btn-left").addEventListener('click', ()=>applySpherical(-ROT_STEP, 0, 1));
+      $("btn-right").addEventListener('click', ()=>applySpherical(ROT_STEP, 0, 1));
+      $("btn-zoom-in").addEventListener('click', ()=>applySpherical(0, 0, ZOOM_FACTOR));
+      $("btn-zoom-out").addEventListener('click', ()=>applySpherical(0, 0, 1/ZOOM_FACTOR));
+      $("btn-reset").addEventListener('click', ()=>{
+        camera.position.set(6,6,6);
+        controls.target.set(0,0,0);
+        controls.update();
+      });
+
+      window.addEventListener('keydown', (e)=>{
+        let handled = true;
+        switch(e.key){
+          case 'ArrowUp': case 'w': case 'W': applySpherical(0, -ROT_STEP, 1); break;
+          case 'ArrowDown': case 's': case 'S': applySpherical(0, ROT_STEP, 1); break;
+          case 'ArrowLeft': case 'a': case 'A': applySpherical(-ROT_STEP, 0, 1); break;
+          case 'ArrowRight': case 'd': case 'D': applySpherical(ROT_STEP, 0, 1); break;
+          case '+': case '=': applySpherical(0, 0, ZOOM_FACTOR); break;
+          case '-': case '_': applySpherical(0, 0, 1/ZOOM_FACTOR); break;
+          case 'r': case 'R':
+            camera.position.set(6,6,6);
+            controls.target.set(0,0,0);
+            controls.update();
+            break;
+          default: handled = false;
+        }
+        if(handled){ e.preventDefault(); }
+      }, { passive:false });
 
       container.addEventListener('dblclick', () => {
         camera.position.set(6,6,6);
