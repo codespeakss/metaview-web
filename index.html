@@ -33,6 +33,8 @@
         <button id="btn-zoom-in" title="拉近（+ 或 =）">＋</button>
         <button id="btn-zoom-out" title="拉远（-）">－</button>
         <span class="sep"></span>
+        <button id="btn-screenshot" title="保存截图">截图</button>
+        <span class="sep"></span>
         <button id="btn-reset" title="重置（R 或 双击画布）">重置</button>
       </div>
     </header>
@@ -117,7 +119,7 @@
         group.add(line);
 
         // 正向箭头
-        const coneGeom = new THREE.ConeGeometry(0.12, 0.4, 12);
+        const coneGeom = new THREE.ConeGeometry(0.04, 0.133, 12);
         const coneMat = new THREE.MeshStandardMaterial({ color });
         const conePos = new THREE.Mesh(coneGeom, coneMat);
         conePos.position.copy(dirVec.clone().multiplyScalar(length + 0.2));
@@ -170,27 +172,61 @@
         return Math.abs(a.z) < EPSZ && Math.abs(b.z) < EPSZ;
       }
 
-      function drawArrow(start, end, color){
+      function drawArrow(start, end, color, dashed = false) {
         const thick = isZPlane(start, end);
         const dirVec = end.clone().sub(start);
         const len = dirVec.length();
-        if(len <= 0.1) return;
+        if (len <= 0.1) return;
         dirVec.normalize();
         const headLen = 0.35;
         const shaftLen = Math.max(0.05, len - headLen);
         const r = thick ? 0.04 : 0.015;
         const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0), dirVec);
-        const shaft = new THREE.Mesh(new THREE.CylinderGeometry(r, r, shaftLen, 12), new THREE.MeshStandardMaterial({ color, metalness:0.1, roughness:0.6 }));
-        const shaftMid = start.clone().add(dirVec.clone().multiplyScalar(shaftLen/2));
-        shaft.position.copy(shaftMid);
-        shaft.quaternion.copy(quat);
+        
+        // Create shaft (solid or dashed)
+        let shaft;
+        if (dashed) {
+          // Create a dashed line using LineDashedMaterial
+          const points = [];
+          const segments = Math.max(3, Math.floor(len * 5));
+          for (let i = 0; i <= segments; i++) {
+            const t = i / segments;
+            points.push(start.clone().lerp(end, t));
+          }
+          const geometry = new THREE.BufferGeometry().setFromPoints(points);
+          geometry.computeBoundingSphere();
+          const material = new THREE.LineDashedMaterial({
+            color: color,
+            dashSize: 0.2,
+            gapSize: 0.1,
+            linewidth: thick ? 2 : 1
+          });
+          shaft = new THREE.Line(geometry, material);
+          shaft.computeLineDistances();
+        } else {
+          // Original solid shaft
+          shaft = new THREE.Mesh(
+            new THREE.CylinderGeometry(r, r, shaftLen, 12), 
+            new THREE.MeshStandardMaterial({ color, metalness: 0.1, roughness: 0.6 })
+          );
+          const shaftMid = start.clone().add(dirVec.clone().multiplyScalar(shaftLen/2));
+          shaft.position.copy(shaftMid);
+          shaft.quaternion.copy(quat);
+        }
         scene.add(shaft);
-        const coneRad = thick ? r*2.2 : r*1.8;
-        const head = new THREE.Mesh(new THREE.ConeGeometry(coneRad, headLen, 16), new THREE.MeshStandardMaterial({ color, metalness:0.1, roughness:0.6 }));
-        const headCenter = start.clone().add(dirVec.clone().multiplyScalar(shaftLen + headLen/2));
-        head.position.copy(headCenter);
-        head.quaternion.copy(quat);
-        scene.add(head);
+
+        // Add arrow head if not dashed
+        if (!dashed) {
+          const coneRad = thick ? r*2.2 : r*1.8;
+          const head = new THREE.Mesh(
+            new THREE.ConeGeometry(coneRad, headLen, 16), 
+            new THREE.MeshStandardMaterial({ color, metalness: 0.1, roughness: 0.6 })
+          );
+          const headCenter = start.clone().add(dirVec.clone().multiplyScalar(shaftLen + headLen/2));
+          head.position.copy(headCenter);
+          head.quaternion.copy(quat);
+          scene.add(head);
+        }
       }
 
       function makeNode(text, position, color){
@@ -236,7 +272,7 @@
         let a = srcPos.clone();
         let b = dstPos.clone();
         if(isZPlane(a,b)){ a.z += 0.01; b.z += 0.01; }
-        drawArrow(a, b, 0x79c0ff);
+        drawArrow(a, b, 0x79c0ff, true);  // true for dashed line
       });
 
       function onWindowResize(){
@@ -278,6 +314,32 @@
       $("btn-right").addEventListener('click', ()=>applySpherical(ROT_STEP, 0, 1));
       $("btn-zoom-in").addEventListener('click', ()=>applySpherical(0, 0, ZOOM_FACTOR));
       $("btn-zoom-out").addEventListener('click', ()=>applySpherical(0, 0, 1/ZOOM_FACTOR));
+      // 添加截图功能
+      $("btn-screenshot").addEventListener('click', () => {
+        // 临时隐藏UI元素
+        const header = document.querySelector('header');
+        const footer = document.querySelector('.footer');
+        const headerDisplay = header.style.display;
+        const footerDisplay = footer.style.display;
+        header.style.display = 'none';
+        footer.style.display = 'none';
+        
+        // 渲染一次场景以确保截图是最新的
+        renderer.render(scene, camera);
+        
+        // 创建下载链接
+        const link = document.createElement('a');
+        link.download = `screenshot-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.png`;
+        link.href = renderer.domElement.toDataURL('image/png');
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        // 恢复UI元素
+        header.style.display = headerDisplay;
+        footer.style.display = footerDisplay;
+      });
+
       $("btn-reset").addEventListener('click', ()=>{
         camera.position.set(6,6,6);
         controls.target.set(0,0,0);
